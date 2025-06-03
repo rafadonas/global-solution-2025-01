@@ -1,7 +1,8 @@
-*.out
-*.exe
-*.o
-*.log
-*~
 relatos.txt
-.vscode/
+*.tmp
+*.swp
+*.bak
+*.o
+*.exe
+.vscode
+tasks.json
