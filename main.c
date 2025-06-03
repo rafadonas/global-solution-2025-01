@@ -1,38 +1,55 @@
+// Sistema de Cadastro e Consulta de Relatos sobre Catástrofes Naturais
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
 
-#define MAX_RELATOS 100
-#define PI 3.141592653589793
-#define RAIO_MAX_KM 10.0
+// ---------------------- Constantes Globais ----------------------
+#define PI 3.141592653589793 // Valor de PI para cálculo da distância
+#define RAIO_MAX_KM 10.0      // Raio máximo para filtro de relatos por proximidade (em km)
 
+// ---------------------- Structs ----------------------
 typedef struct {
-    char nome[50];
-    char email[50];
-    char tipo[30];
-    char descricao[100];
-    double latitude;
-    double longitude;
+    char nome[50];        // Nome do usuário
+    char email[50];       // Email do usuário
+    char tipo[30];        // Tipo de catástrofe
+    char descricao[100];  // Descrição do ocorrido
+    double latitude;      // Latitude do local
+    double longitude;     // Longitude do local
 } Relato;
 
-Relato relatos[MAX_RELATOS];
-int totalRelatos = 0;
+// ---------------------- Protótipos ----------------------
+// Declaração das funções utilizadas
+void salvarArquivo();
+void carregarArquivo();
+void removerNovaLinha(char *str);
+int validarString(const char *str, int maxLen);
+int validarEmail(const char *email);
+int lerDouble(const char *prompt, double *valor, double min, double max);
+int lerString(char *buffer, int tamanho, const char *prompt, int maxLen);
+double calcularDistancia(double lat1, double lon1, double lat2, double lon2);
+void cadastrarRelato();
+void listarRelatos();
+void consultarPorRaio();
+void ordenarPorNome();
+void limparBuffer();
+int compararNome(const void *a, const void *b);
 
-// ========================
-// Funções relacionadas a arquivo
-// ========================
+// ---------------------- Variáveis Dinâmicas ----------------------
+Relato *relatos = NULL;        // Vetor dinâmico de relatos
+int totalRelatos = 0;          // Total atual de relatos
+int capacidadeRelatos = 0;     // Capacidade alocada do vetor
 
-/**
- * Salva todos os relatos no arquivo "relatos.txt".
- */
+// ---------------------- Funções de Arquivo ----------------------
+// Salva os relatos no arquivo texto
 void salvarArquivo() {
     FILE *f = fopen("relatos.txt", "w");
     if (!f) {
         printf("Erro ao salvar arquivo.\n");
         return;
     }
+    // Escreve cada relato em formato separado por ponto e vírgula
     for (int i = 0; i < totalRelatos; i++) {
         fprintf(f, "%s;%s;%s;%s;%.6f;%.6f\n",
                 relatos[i].nome, relatos[i].email, relatos[i].tipo, relatos[i].descricao,
@@ -41,36 +58,42 @@ void salvarArquivo() {
     fclose(f);
 }
 
-/**
- * Carrega relatos do arquivo "relatos.txt" para a memória.
- */
+// Carrega os relatos do arquivo texto (se existir)
 void carregarArquivo() {
     FILE *f = fopen("relatos.txt", "r");
-    if (!f) return;
-    while (totalRelatos < MAX_RELATOS &&
-           fscanf(f, " %49[^;];%49[^;];%29[^;];%99[^;];%lf;%lf\n",
-                  relatos[totalRelatos].nome, relatos[totalRelatos].email,
-                  relatos[totalRelatos].tipo, relatos[totalRelatos].descricao,
-                  &relatos[totalRelatos].latitude, &relatos[totalRelatos].longitude) == 6) {
+    if (!f) return; // Se o arquivo não existir, simplesmente retorna
+
+    char linha[300];
+    while (fgets(linha, sizeof(linha), f)) {
+        // Aumenta capacidade do vetor, se necessário
+        if (totalRelatos == capacidadeRelatos) {
+            capacidadeRelatos = capacidadeRelatos == 0 ? 10 : capacidadeRelatos * 2;
+            relatos = realloc(relatos, capacidadeRelatos * sizeof(Relato));
+            if (!relatos) {
+                printf("Erro de alocação.\n");
+                fclose(f);
+                exit(1);
+            }
+        }
+
+        // Lê dados da linha do arquivo
+        sscanf(linha, " %49[^;];%49[^;];%29[^;];%99[^;];%lf;%lf",
+               relatos[totalRelatos].nome, relatos[totalRelatos].email,
+               relatos[totalRelatos].tipo, relatos[totalRelatos].descricao,
+               &relatos[totalRelatos].latitude, &relatos[totalRelatos].longitude);
         totalRelatos++;
     }
+
     fclose(f);
 }
 
-// ========================
-// Funções de validação e leitura
-// ========================
-
-/**
- * Remove o '\n' do final da string, se houver.
- */
+// ---------------------- Funções de Validação ----------------------
+// Remove o caractere de nova linha (\n) da string
 void removerNovaLinha(char *str) {
     str[strcspn(str, "\n")] = '\0';
 }
 
-/**
- * Valida se a string não está vazia, não ultrapassa tamanho max e não é só espaços.
- */
+// Valida se a string não é nula, não está vazia e tem tamanho adequado
 int validarString(const char *str, int maxLen) {
     if (!str) return 0;
     int len = strlen(str);
@@ -81,9 +104,7 @@ int validarString(const char *str, int maxLen) {
     return 0;
 }
 
-/**
- * Valida se o email contém '@' e termina com ".com".
- */
+// Valida email contendo "@" e terminando em ".com"
 int validarEmail(const char *email) {
     if (!email) return 0;
     const char *at = strchr(email, '@');
@@ -92,10 +113,7 @@ int validarEmail(const char *email) {
     return (len > 4 && strcmp(email + len - 4, ".com") == 0);
 }
 
-/**
- * Lê um double do stdin, com validação de intervalo.
- * Retorna 1 se sucesso, 0 se erro.
- */
+// Lê valor double com verificação de faixa válida
 int lerDouble(const char *prompt, double *valor, double min, double max) {
     char buffer[100], *endptr;
     while (1) {
@@ -103,7 +121,7 @@ int lerDouble(const char *prompt, double *valor, double min, double max) {
         if (!fgets(buffer, sizeof(buffer), stdin)) return 0;
         *valor = strtod(buffer, &endptr);
         if (endptr == buffer || (*endptr != '\n' && *endptr != '\0')) {
-            printf("Entrada inválida. Digite um número válido.\n");
+            printf("Entrada inválida.\n");
             continue;
         }
         if (*valor < min || *valor > max) {
@@ -114,10 +132,7 @@ int lerDouble(const char *prompt, double *valor, double min, double max) {
     }
 }
 
-/**
- * Lê uma string do stdin, remove o '\n' e valida.
- * Retorna 1 se válido, 0 se inválido.
- */
+// Lê string com prompt e validação de tamanho e conteúdo
 int lerString(char *buffer, int tamanho, const char *prompt, int maxLen) {
     printf("%s", prompt);
     if (!fgets(buffer, tamanho, stdin)) return 0;
@@ -125,13 +140,8 @@ int lerString(char *buffer, int tamanho, const char *prompt, int maxLen) {
     return validarString(buffer, maxLen);
 }
 
-// ========================
-// Funções principais do programa
-// ========================
-
-/**
- * Calcula distância entre dois pontos (lat/lon) usando fórmula de Haversine.
- */
+// ---------------------- Função de Distância ----------------------
+// Calcula a distância entre dois pontos geográficos usando fórmula de Haversine
 double calcularDistancia(double lat1, double lon1, double lat2, double lon2) {
     double rad = PI / 180.0;
     double dLat = (lat2 - lat1) * rad;
@@ -144,58 +154,40 @@ double calcularDistancia(double lat1, double lon1, double lat2, double lon2) {
     return 6371 * 2 * atan2(sqrt(a), sqrt(1 - a));
 }
 
-/**
- * Cadastra um novo relato, lendo dados do usuário e validando.
- */
+// ---------------------- Cadastro e Consulta ----------------------
+// Cadastra um novo relato
 void cadastrarRelato() {
-    if (totalRelatos >= MAX_RELATOS) {
-        printf("Limite de relatos atingido.\n");
-        return;
+    // Garante espaço no vetor
+    if (totalRelatos == capacidadeRelatos) {
+        capacidadeRelatos = capacidadeRelatos == 0 ? 10 : capacidadeRelatos * 2;
+        relatos = realloc(relatos, capacidadeRelatos * sizeof(Relato));
+        if (!relatos) {
+            printf("Erro de alocação.\n");
+            exit(1);
+        }
     }
 
     Relato r;
+    // Leitura e validação dos campos
+    if (!lerString(r.nome, sizeof(r.nome), "Nome: ", 49)) return;
+    if (!lerString(r.email, sizeof(r.email), "Email: ", 49) || !validarEmail(r.email)) return;
+    if (!lerString(r.tipo, sizeof(r.tipo), "Tipo: ", 29)) return;
+    if (!lerString(r.descricao, sizeof(r.descricao), "Descrição: ", 99)) return;
+    if (!lerDouble("Latitude (-90 a 90): ", &r.latitude, -90, 90)) return;
+    if (!lerDouble("Longitude (-180 a 180): ", &r.longitude, -180, 180)) return;
 
-    if (!lerString(r.nome, sizeof(r.nome), "Nome (max 49 chars): ", 49)) {
-        printf("Nome inválido.\n");
-        return;
-    }
-
-    if (!lerString(r.email, sizeof(r.email), "Email (deve conter '@' e terminar com '.com'): ", 49) ||
-        !validarEmail(r.email)) {
-        printf("Email inválido.\n");
-        return;
-    }
-
-    if (!lerString(r.tipo, sizeof(r.tipo), "Tipo de catástrofe (max 29 chars): ", 29)) {
-        printf("Tipo inválido.\n");
-        return;
-    }
-
-    if (!lerString(r.descricao, sizeof(r.descricao), "Descrição (max 99 chars): ", 99)) {
-        printf("Descrição inválida.\n");
-        return;
-    }
-
-    if (!lerDouble("Latitude (-90 a 90): ", &r.latitude, -90, 90) ||
-        !lerDouble("Longitude (-180 a 180): ", &r.longitude, -180, 180)) {
-        printf("Coordenadas inválidas.\n");
-        return;
-    }
-
+    // Adiciona ao vetor
     relatos[totalRelatos++] = r;
     salvarArquivo();
-    printf("Relato cadastrado com sucesso!\n");
+    printf("Relato salvo com sucesso!\n");
 }
 
-/**
- * Lista todos os relatos cadastrados.
- */
+// Lista todos os relatos cadastrados
 void listarRelatos() {
     if (totalRelatos == 0) {
         printf("Nenhum relato cadastrado.\n");
         return;
     }
-
     for (int i = 0; i < totalRelatos; i++) {
         printf("\n[%d] %s - %s\nTipo: %s\nDescrição: %s\nLatitude: %.6f | Longitude: %.6f\n",
                i + 1, relatos[i].nome, relatos[i].email, relatos[i].tipo,
@@ -203,9 +195,7 @@ void listarRelatos() {
     }
 }
 
-/**
- * Consulta relatos num raio de 10km a partir de uma coordenada dada pelo usuário.
- */
+// Consulta relatos em um raio de até 10km
 void consultarPorRaio() {
     if (totalRelatos == 0) {
         printf("Nenhum relato cadastrado.\n");
@@ -213,8 +203,8 @@ void consultarPorRaio() {
     }
 
     double lat, lon;
-    if (!lerDouble("Digite sua latitude (-90 a 90): ", &lat, -90, 90) ||
-        !lerDouble("Digite sua longitude (-180 a 180): ", &lon, -180, 180)) return;
+    if (!lerDouble("Digite sua latitude (-90 a 90): ", &lat, -90, 90)) return;
+    if (!lerDouble("Digite sua longitude (-180 a 180): ", &lon, -180, 180)) return;
 
     int encontrados = 0;
     printf("\nRelatos em até %.0f km:\n", RAIO_MAX_KM);
@@ -230,19 +220,15 @@ void consultarPorRaio() {
     if (!encontrados) printf("Nenhum relato encontrado no raio especificado.\n");
 }
 
-/**
- * Função de comparação para qsort: ordena relatos por nome (alfabético).
- */
+// Função de comparação usada na ordenação por nome
 int compararNome(const void *a, const void *b) {
     return strcmp(((Relato *)a)->nome, ((Relato *)b)->nome);
 }
 
-/**
- * Ordena os relatos por nome usando qsort.
- */
+// Ordena os relatos alfabeticamente pelo nome do usuário
 void ordenarPorNome() {
     if (totalRelatos < 2) {
-        printf("Não há relatos suficientes para ordenar.\n");
+        printf("Poucos relatos para ordenar.\n");
         return;
     }
     qsort(relatos, totalRelatos, sizeof(Relato), compararNome);
@@ -250,23 +236,20 @@ void ordenarPorNome() {
     printf("Relatos ordenados por nome.\n");
 }
 
-/**
- * Limpa o buffer do teclado para evitar problemas de entrada.
- */
+// ---------------------- Auxiliar ----------------------
+// Limpa caracteres residuais do buffer do teclado
 void limparBuffer() {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
 }
 
-// ========================
-// Função principal
-// ========================
-
+// ---------------------- Main ----------------------
 int main() {
-    carregarArquivo();
+    carregarArquivo(); // Carrega os relatos ao iniciar o programa
     int opcao;
 
     do {
+        // Menu principal
         printf("\n--- MENU ---\n");
         printf("1. Cadastrar relato\n");
         printf("2. Listar relatos\n");
@@ -276,12 +259,13 @@ int main() {
         printf("Opção: ");
 
         if (scanf("%d", &opcao) != 1) {
-            printf("Entrada inválida. Digite um número.\n");
+            printf("Entrada inválida.\n");
             limparBuffer();
             continue;
         }
         limparBuffer();
 
+        // Tratamento da opção escolhida
         switch (opcao) {
             case 1: cadastrarRelato(); break;
             case 2: listarRelatos(); break;
@@ -292,5 +276,6 @@ int main() {
         }
     } while (opcao != 0);
 
+    free(relatos); // Libera a memória alocada
     return 0;
 }
